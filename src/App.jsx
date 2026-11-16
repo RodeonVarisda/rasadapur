@@ -192,6 +192,22 @@ export default function App() {
     navigate('auth');
   }
 
+  function updateProfile(payload) {
+    if (!user) return { ok: false, message: 'Sesi tidak ditemukan.' };
+    const name = String(payload.name || '').trim();
+    const phone = String(payload.phone || '').replace(/[^0-9]/g, '');
+    const storeName = String(payload.storeName || '').trim();
+    if (!name) { notify('Nama wajib diisi.'); return { ok: false }; }
+    if (!phone) { notify('Nomor WhatsApp wajib diisi.'); return { ok: false }; }
+    const next = storage.getUsers().map((u) => u.id === user.id ? { ...u, name, phone, ...(u.role === 'seller' ? { storeName } : {}) } : u);
+    storage.setUsers(next);
+    const updated = auth.currentUser();
+    setUser(updated);
+    notify('Profil berhasil diperbarui.');
+    refresh();
+    return { ok: true };
+  }
+
   const cartCount = cart.reduce((s, i) => s + Number(i.qty || 0), 0);
 
   return (
@@ -232,7 +248,7 @@ export default function App() {
         {route === 'buyerOrders' && user?.role === 'buyer' && <BuyerOrdersPage user={user} orders={orders} users={users} getSeller={getSeller} getSellerName={getSellerName} />}
         {route === 'dashboard' && user?.role === 'seller' && (
           <SellerDashboard user={user} users={users} products={products} orders={orders} getSellerName={getSellerName}
-            onSaveProduct={saveProduct} onDeleteProduct={deleteProduct} onUpdateOrder={updateOrderStatus} />
+            onSaveProduct={saveProduct} onDeleteProduct={deleteProduct} onUpdateOrder={updateOrderStatus} onUpdateProfile={updateProfile} />
         )}
         {route === 'dashboard' && user?.role === 'admin' && (
           <AdminDashboard user={user} users={users} products={products} orders={orders} getSellerName={getSellerName}
@@ -550,12 +566,17 @@ function ProductForm({ user, users, products, editing, onSave, onCancel }) {
   );
 }
 
-function SellerDashboard({ user, users, products, orders, getSellerName, onSaveProduct, onDeleteProduct, onUpdateOrder }) {
+function SellerDashboard({ user, users, products, orders, getSellerName, onSaveProduct, onDeleteProduct, onUpdateOrder, onUpdateProfile }) {
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [profile, setProfile] = useState({ name: user.name || '', storeName: user.storeName || '', phone: user.phone || '' });
   const mineProducts = products.filter((p) => p.sellerId === user.id);
   const mineOrders = orders.filter((o) => o.items.some((i) => i.sellerId === user.id)).sort((a,b)=>b.createdAt-a.createdAt);
   const revenue = mineOrders.filter(o => o.status !== 'dibatalkan').reduce((sum, o) => sum + o.items.filter(i=>i.sellerId===user.id).reduce((s,i)=>s+i.harga*i.qty,0), 0);
+
+  useEffect(() => {
+    setProfile({ name: user.name || '', storeName: user.storeName || '', phone: user.phone || '' });
+  }, [user.id, user.name, user.storeName, user.phone]);
 
   function openNew() { setEditing(null); setShowForm(true); }
   function openEdit(p) { setEditing(p); setShowForm(true); }
@@ -564,7 +585,20 @@ function SellerDashboard({ user, users, products, orders, getSellerName, onSaveP
 
   return (
     <section className="view active">
-      <div className="section-head"><div><div className="eyebrow">Dashboard Penjual</div><h2>{user.storeName || user.name}</h2><p>Kelola produk dan pesanan toko Anda.</p></div></div>
+      <div className="section-head"><div><div className="eyebrow">Dashboard Penjual</div><h2>{user.storeName || user.name}</h2><p>Kelola profil toko, produk, dan pesanan Anda.</p></div></div>
+      <div className="panel">
+        <div className="panel-head"><h2>Profil & Kontak Toko</h2></div>
+        <form onSubmit={(e) => { e.preventDefault(); onUpdateProfile(profile); }}>
+          <div className="form-grid">
+            <div className="field"><label htmlFor="sellerProfileName">Nama penjual *</label><input id="sellerProfileName" required value={profile.name} onChange={(e)=>setProfile(v=>({...v,name:e.target.value}))} /></div>
+            <div className="field"><label htmlFor="sellerStoreName">Nama toko</label><input id="sellerStoreName" value={profile.storeName} onChange={(e)=>setProfile(v=>({...v,storeName:e.target.value}))} placeholder="Contoh: Dapur Bu Sari" /></div>
+            <div className="field full"><label htmlFor="sellerPhone">Nomor WhatsApp *</label><input id="sellerPhone" required inputMode="tel" value={profile.phone} onChange={(e)=>setProfile(v=>({...v,phone:e.target.value}))} placeholder="Contoh: 6281234567890" />
+              <p className="notice">Gunakan format internasional tanpa tanda +, spasi, atau strip (contoh: 6281234567890). Nomor ini ditampilkan ke pembeli untuk pertanyaan dan konfirmasi pesanan. Ubah di sini jika nomor sudah tidak aktif.</p>
+            </div>
+          </div>
+          <div className="form-actions"><button className="btn primary" type="submit">Simpan Profil</button></div>
+        </form>
+      </div>
       <div className="stats">
         <div className="stat"><span>Total produk</span><strong>{mineProducts.length}</strong></div>
         <div className="stat"><span>Total stok</span><strong>{mineProducts.reduce((s,p)=>s+Number(p.stok||0),0)}</strong></div>
