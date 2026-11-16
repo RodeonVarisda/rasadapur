@@ -68,19 +68,19 @@ function seedOrders() {
         { productId: 'p1', nama: 'Kue Bagiak', harga: 28000, qty: 2, sellerId: 'u_seller1' },
         { productId: 'p2', nama: 'Sale Pisang', harga: 18000, qty: 1, sellerId: 'u_seller1' },
       ],
-      total: 74000, status: 'selesai', note: 'Tolong dibungkus rapi', address: 'Jl. Mawar No. 10, Banyuwangi',
+      total: 74000, status: 'selesai', paymentMethod: 'Transfer Bank', note: 'Tolong dibungkus rapi', address: 'Jl. Mawar No. 10, Banyuwangi',
       createdAt: now - 86400000 * 3, updatedAt: now - 86400000 * 2,
     },
     {
       id: 'o2', buyerId: 'u_buyer2', sellerIds: ['u_seller2'],
       items: [{ productId: 'p3', nama: 'Kopi Osing', harga: 35000, qty: 1, sellerId: 'u_seller2' }],
-      total: 35000, status: 'diproses', note: '', address: 'Jl. Melati No. 5, Banyuwangi',
+      total: 35000, status: 'diproses', paymentMethod: 'COD (Bayar di Tempat)', note: '', address: 'Jl. Melati No. 5, Banyuwangi',
       createdAt: now - 86400000, updatedAt: now - 43200000,
     },
     {
       id: 'o3', buyerId: 'u_buyer1', sellerIds: ['u_seller2'],
       items: [{ productId: 'p6', nama: 'Pia Banyuwangi', harga: 30000, qty: 2, sellerId: 'u_seller2' }],
-      total: 60000, status: 'menunggu', note: 'Kirim sore', address: 'Jl. Mawar No. 10, Banyuwangi',
+      total: 60000, status: 'menunggu', paymentMethod: 'E-Wallet', note: 'Kirim sore', address: 'Jl. Mawar No. 10, Banyuwangi',
       createdAt: now - 3600000, updatedAt: now - 3600000,
     },
   ];
@@ -103,7 +103,12 @@ export function ensureSeed() {
     }));
     write(KEYS.products, products);
   }
-  if (!localStorage.getItem(KEYS.orders)) write(KEYS.orders, seedOrders());
+  if (!localStorage.getItem(KEYS.orders)) {
+    write(KEYS.orders, seedOrders());
+  } else {
+    const orders = read(KEYS.orders, []).map((o) => ({ paymentMethod: o.paymentMethod || 'Belum dipilih', ...o }));
+    write(KEYS.orders, orders);
+  }
   if (!localStorage.getItem(KEYS.settings)) write(KEYS.settings, seedSettings());
 }
 

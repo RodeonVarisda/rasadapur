@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import './App.css';
 import * as storage from './lib/storage';
 import * as auth from './lib/auth';
-import { rupiah, fmtDate, imgFor, placeholder, roleLabel, compressImage } from './lib/utils';
+import { rupiah, fmtDate, imgFor, placeholder, roleLabel, compressImage, waLink, formatPhone } from './lib/utils';
 
 storage.ensureSeed();
 
@@ -68,8 +68,9 @@ export default function App() {
     navigate('catalog');
   }
 
+  const getSeller = (id) => users.find((x) => x.id === id);
   const getSellerName = (id) => {
-    const u = users.find((x) => x.id === id);
+    const u = getSeller(id);
     return u ? (u.storeName || u.name) : 'Toko';
   };
 
@@ -98,7 +99,7 @@ export default function App() {
   }
   function removeCartItem(pid) { saveCartState(storage.getCart().filter((i) => i.productId !== pid)); }
 
-  function checkout(address, note) {
+  function checkout(address, note, paymentMethod) {
     if (!user) return;
     const allProducts = storage.getProducts();
     const items = storage.getCart().map((ci) => ({ ci, p: allProducts.find((p) => p.id === ci.productId) })).filter((x) => x.p);
@@ -106,12 +107,14 @@ export default function App() {
     for (const { ci, p } of items) {
       if (p.stok < ci.qty) { notify(`Stok ${p.nama} tidak mencukupi.`); refresh(); return; }
     }
+    const method = String(paymentMethod || '').trim();
+    if (!method) { notify('Pilih metode pembayaran.'); return; }
     const orderItems = items.map(({ ci, p }) => ({ productId: p.id, nama: p.nama, harga: p.harga, qty: ci.qty, sellerId: p.sellerId }));
     const total = orderItems.reduce((s, i) => s + i.harga * i.qty, 0);
     const now = Date.now();
     const order = {
       id: storage.uid('o'), buyerId: user.id, sellerIds: [...new Set(orderItems.map((i) => i.sellerId))],
-      items: orderItems, total, status: 'menunggu', note: String(note || '').trim(), address: String(address || '').trim(),
+      items: orderItems, total, status: 'menunggu', paymentMethod: method, note: String(note || '').trim(), address: String(address || '').trim(),
       createdAt: now, updatedAt: now,
     };
     const newProducts = allProducts.map((p) => {
@@ -223,10 +226,10 @@ export default function App() {
       </header>
 
       <main className="wrap">
-        {route === 'catalog' && <CatalogPage user={user} products={products} users={users} getSellerName={getSellerName} onAdd={addToCart} onNeedLogin={() => navigate('auth')} />}
+        {route === 'catalog' && <CatalogPage user={user} products={products} users={users} getSeller={getSeller} getSellerName={getSellerName} onAdd={addToCart} onNeedLogin={() => navigate('auth')} />}
         {route === 'auth' && !user && <AuthPage onLogin={doLogin} onRegister={doRegisterBuyer} />}
-        {route === 'cart' && user?.role === 'buyer' && <CartPage user={user} cart={cart} products={products} getSellerName={getSellerName} onQty={updateCartQty} onRemove={removeCartItem} onCheckout={checkout} />}
-        {route === 'buyerOrders' && user?.role === 'buyer' && <BuyerOrdersPage user={user} orders={orders} />}
+        {route === 'cart' && user?.role === 'buyer' && <CartPage user={user} cart={cart} products={products} users={users} getSeller={getSeller} getSellerName={getSellerName} onQty={updateCartQty} onRemove={removeCartItem} onCheckout={checkout} />}
+        {route === 'buyerOrders' && user?.role === 'buyer' && <BuyerOrdersPage user={user} orders={orders} users={users} getSeller={getSeller} getSellerName={getSellerName} />}
         {route === 'dashboard' && user?.role === 'seller' && (
           <SellerDashboard user={user} users={users} products={products} orders={orders} getSellerName={getSellerName}
             onSaveProduct={saveProduct} onDeleteProduct={deleteProduct} onUpdateOrder={updateOrderStatus} />
@@ -243,7 +246,7 @@ export default function App() {
   );
 }
 
-function CatalogPage({ user, products, users, getSellerName, onAdd, onNeedLogin }) {
+function CatalogPage({ user, products, users, getSeller, getSellerName, onAdd, onNeedLogin }) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('');
   const [sort, setSort] = useState('featured');
@@ -285,13 +288,19 @@ function CatalogPage({ user, products, users, getSellerName, onAdd, onNeedLogin 
         </select>
       </div>
       <div className="grid">
-        {list.length ? list.map((p) => (
+        {list.length ? list.map((p) => {
+          const seller = getSeller(p.sellerId);
+          const wa = waLink(seller?.phone, `Halo ${seller?.storeName || seller?.name || ''}, saya ingin bertanya tentang produk ${p.nama}. Apakah masih tersedia?`);
+          return (
           <article className="product" key={p.id}>
             <img src={imgFor(p)} alt={p.nama} />
             <div className="product-body">
               <div className="meta"><span className="tag">{p.kategori || 'Umum'}</span>{p.unggulan ? <span className="star">★ Unggulan</span> : null}</div>
               <h3>{p.nama}</h3>
               <div className="seller-name">Toko: {getSellerName(p.sellerId)}</div>
+              {seller?.phone ? (
+                <div className="seller-name">WhatsApp: <a href={wa} target="_blank" rel="noopener noreferrer">{formatPhone(seller.phone)}</a></div>
+              ) : <div className="seller-name muted">WhatsApp penjual belum tersedia</div>}
               <p className="desc">{p.deskripsi || 'Produk pilihan UMKM Banyuwangi.'}</p>
               <div className="price-row"><span className="price">{rupiah(p.harga)}</span><span className="stock">Stok: {p.stok}</span></div>
               <div className="actions-row">
@@ -299,9 +308,10 @@ function CatalogPage({ user, products, users, getSellerName, onAdd, onNeedLogin 
                   ? <button className="btn primary" onClick={() => onAdd(p.id)} disabled={p.stok <= 0}>{p.stok <= 0 ? 'Stok habis' : 'Tambah ke keranjang'}</button>
                   : <button className="btn" onClick={onNeedLogin}>{user ? 'Fitur khusus pembeli' : 'Masuk untuk membeli'}</button>}
               </div>
+              {wa && <div className="actions-row" style={{ marginTop: 8 }}><a className="btn soft" href={wa} target="_blank" rel="noopener noreferrer">Tanya via WhatsApp</a></div>}
             </div>
           </article>
-        )) : <div className="empty">Produk tidak ditemukan. Coba kata kunci atau kategori lain.</div>}
+        );}) : <div className="empty">Produk tidak ditemukan. Coba kata kunci atau kategori lain.</div>}
       </div>
     </section>
   );
@@ -351,21 +361,28 @@ function AuthPage({ onLogin, onRegister }) {
   );
 }
 
-function CartPage({ user, cart, products, getSellerName, onQty, onRemove, onCheckout }) {
+function CartPage({ user, cart, products, users, getSeller, getSellerName, onQty, onRemove, onCheckout }) {
   const [address, setAddress] = useState(user?.address || '');
   const [note, setNote] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('');
   const items = cart.map((ci) => ({ ...ci, product: products.find((p) => p.id === ci.productId) })).filter((x) => x.product);
   const total = items.reduce((s, i) => s + i.product.harga * i.qty, 0);
+  const sellerIds = [...new Set(items.map((i) => i.product.sellerId))];
+  const paymentOptions = ['Transfer Bank', 'COD (Bayar di Tempat)', 'E-Wallet (Dana/OVO/GoPay/ShopeePay)', 'QRIS (konfirmasi manual)'];
   return (
     <section className="view active">
-      <div className="section-head"><div><h2>Keranjang Belanja</h2><p>Periksa item sebelum melakukan pemesanan.</p></div></div>
+      <div className="section-head"><div><h2>Keranjang Belanja</h2><p>Periksa item, pilih metode pembayaran, lalu buat pesanan.</p></div></div>
       <div className="cart-layout">
         <div className="panel">
-          {items.length ? items.map((i) => (
+          {items.length ? items.map((i) => {
+            const seller = getSeller(i.product.sellerId);
+            const wa = waLink(seller?.phone, `Halo ${seller?.storeName || seller?.name || ''}, saya ingin bertanya tentang produk ${i.product.nama}.`);
+            return (
             <div className="cart-item" key={i.productId}>
               <img src={imgFor(i.product)} alt={i.product.nama} />
               <div>
                 <strong>{i.product.nama}</strong><div className="muted">{getSellerName(i.product.sellerId)} · {rupiah(i.product.harga)}</div>
+                {seller?.phone && <div className="muted">WA penjual: <a href={wa} target="_blank" rel="noopener noreferrer">{formatPhone(seller.phone)}</a></div>}
                 <div className="qty" style={{ marginTop: 6 }}>
                   <button className="btn small" onClick={() => onQty(i.productId, i.qty - 1)}>−</button>
                   <input type="number" min={1} max={i.product.stok} value={i.qty} onChange={(e) => onQty(i.productId, e.target.value)} />
@@ -376,41 +393,55 @@ function CartPage({ user, cart, products, getSellerName, onQty, onRemove, onChec
               </div>
               <div><strong>{rupiah(i.product.harga * i.qty)}</strong></div>
             </div>
-          )) : <div className="empty">Keranjang masih kosong.</div>}
+          );}) : <div className="empty">Keranjang masih kosong.</div>}
         </div>
         <div className="panel">
           <h2>Ringkasan & Checkout</h2>
           <div className="total-row"><span>Total</span><span>{rupiah(total)}</span></div>
-          <form style={{ marginTop: 14 }} onSubmit={(e) => { e.preventDefault(); if (!String(address).trim()) return; onCheckout(address, note); }}>
-            <div className="field"><label htmlFor="coAddress">Alamat pengiriman *</label><textarea id="coAddress" required value={address} onChange={(e)=>setAddress(e.target.value)} /></div>
-            <div className="field" style={{ marginTop: 10 }}><label htmlFor="coNote">Catatan</label><textarea id="coNote" placeholder="Contoh: kirim sore hari" value={note} onChange={(e)=>setNote(e.target.value)} /></div>
+          {sellerIds.length > 1 && <p className="notice">Pesanan ini berisi produk dari {sellerIds.length} penjual. Konfirmasi pembayaran/pengiriman dapat dilakukan ke masing-masing penjual via WhatsApp.</p>}
+          <form style={{ marginTop: 14 }} onSubmit={(e) => { e.preventDefault(); if (!String(address).trim()) return; onCheckout(address, note, paymentMethod); }}>
+            <div className="field"><label htmlFor="coPayment">Metode pembayaran *</label>
+              <select id="coPayment" required value={paymentMethod} onChange={(e)=>setPaymentMethod(e.target.value)}>
+                <option value="">Pilih metode pembayaran</option>
+                {paymentOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+              <p className="notice">Tanpa payment gateway. Setelah pesanan dibuat, silakan konfirmasi pembayaran ke penjual melalui WhatsApp sesuai metode yang dipilih.</p>
+            </div>
+            <div className="field" style={{ marginTop: 10 }}><label htmlFor="coAddress">Alamat pengiriman *</label><textarea id="coAddress" required value={address} onChange={(e)=>setAddress(e.target.value)} /></div>
+            <div className="field" style={{ marginTop: 10 }}><label htmlFor="coNote">Catatan</label><textarea id="coNote" placeholder="Contoh: kirim sore hari, konfirmasi via WA" value={note} onChange={(e)=>setNote(e.target.value)} /></div>
             <div className="form-actions"><button className="btn primary block" type="submit" disabled={!items.length}>Buat Pesanan</button></div>
           </form>
-          <p className="notice">Pesanan akan diteruskan ke penjual terkait dan dapat dipantau di menu Pesanan Saya.</p>
         </div>
       </div>
     </section>
   );
 }
 
-function BuyerOrdersPage({ user, orders }) {
+function BuyerOrdersPage({ user, orders, users, getSeller, getSellerName }) {
   const mine = orders.filter((o) => o.buyerId === user.id).sort((a,b)=>b.createdAt-a.createdAt);
   return (
     <section className="view active">
-      <div className="section-head"><div><h2>Pesanan Saya</h2><p>Riwayat dan status pesanan Anda.</p></div></div>
+      <div className="section-head"><div><h2>Pesanan Saya</h2><p>Riwayat pesanan, metode pembayaran, dan kontak penjual.</p></div></div>
       <div className="panel">
         {mine.length ? (
-          <div className="table-wrap"><table><thead><tr><th>ID</th><th>Tanggal</th><th>Item</th><th>Total</th><th>Status</th><th>Alamat</th></tr></thead><tbody>
-            {mine.map(o => (
+          <div className="table-wrap"><table><thead><tr><th>ID & Tanggal</th><th>Item & Penjual</th><th>Total</th><th>Pembayaran</th><th>Status</th><th>Alamat & Kontak</th></tr></thead><tbody>
+            {mine.map(o => {
+              const sellerIds = [...new Set(o.items.map(i => i.sellerId))];
+              const contacts = sellerIds.map((sid) => {
+                const s = getSeller(sid);
+                const wa = waLink(s?.phone, `Halo ${s?.storeName || s?.name || ''}, saya ingin konfirmasi pesanan ${o.id}.`);
+                return <div key={sid} style={{ marginBottom: 4 }}>{getSellerName(sid)}: {s?.phone ? <a href={wa} target="_blank" rel="noopener noreferrer">{formatPhone(s.phone)}</a> : <span className="muted">-</span>}</div>;
+              });
+              return (
               <tr key={o.id}>
-                <td><strong>{o.id}</strong></td>
-                <td>{fmtDate(o.createdAt)}</td>
-                <td>{o.items.map(i => <div key={i.productId+String(i.qty)}>{i.nama} x{i.qty}</div>)}</td>
+                <td><strong>{o.id}</strong><br /><span className="muted">{fmtDate(o.createdAt)}</span></td>
+                <td>{o.items.map(i => <div key={i.productId+String(i.qty)}>{i.nama} x{i.qty} <span className="muted">({getSellerName(i.sellerId)})</span></div>)}</td>
                 <td>{rupiah(o.total)}</td>
+                <td><strong>{o.paymentMethod || 'Belum dipilih'}</strong><br /><span className="muted">Konfirmasi manual ke penjual</span></td>
                 <td><StatusBadge status={o.status} /></td>
-                <td>{o.address || '-'}</td>
+                <td>{o.address || '-'}<div style={{ marginTop: 6 }}>{contacts}</div>{o.note ? <div className="muted" style={{ marginTop: 4 }}>Catatan: {o.note}</div> : null}</td>
               </tr>
-            ))}
+            );})}
           </tbody></table></div>
         ) : <div className="empty">Belum ada pesanan.</div>}
       </div>
@@ -556,17 +587,18 @@ function SellerDashboard({ user, users, products, orders, getSellerName, onSaveP
       <div className="panel">
         <div className="panel-head"><h2>Pesanan Masuk</h2></div>
         {mineOrders.length ? (
-          <div className="table-wrap"><table><thead><tr><th>Pesanan</th><th>Pembeli</th><th>Item (toko)</th><th>Total toko</th><th>Status</th><th>Ubah status</th></tr></thead><tbody>
+          <div className="table-wrap"><table><thead><tr><th>Pesanan</th><th>Pembeli</th><th>Item (toko)</th><th>Total & Pembayaran</th><th>Status</th><th>Ubah status</th></tr></thead><tbody>
             {mineOrders.map(o => {
               const buyer = users.find(u=>u.id===o.buyerId);
               const myItems = o.items.filter(i=>i.sellerId===user.id);
               const myTotal = myItems.reduce((s,i)=>s+i.harga*i.qty,0);
+              const buyerWa = waLink(buyer?.phone, `Halo ${buyer?.name || ''}, terkait pesanan ${o.id} di RasaDapur.`);
               return (
                 <tr key={o.id}>
                   <td><strong>{o.id}</strong><br /><span className="muted">{fmtDate(o.createdAt)}</span></td>
-                  <td>{buyer?.name||o.buyerId}<br /><span className="muted">{o.address||'-'}</span></td>
+                  <td>{buyer?.name||o.buyerId}<br /><span className="muted">{o.address||'-'}</span>{buyer?.phone ? <div><a href={buyerWa} target="_blank" rel="noopener noreferrer">{formatPhone(buyer.phone)}</a></div> : null}</td>
                   <td>{myItems.map(i=><div key={i.productId}>{i.nama} x{i.qty}</div>)}</td>
-                  <td>{rupiah(myTotal)}</td>
+                  <td>{rupiah(myTotal)}<br /><span className="muted">{o.paymentMethod || 'Belum dipilih'}</span></td>
                   <td><StatusBadge status={o.status} /></td>
                   <td><select className="control" style={{minWidth:140,padding:'6px 8px'}} value={o.status} onChange={(e)=>onUpdateOrder(o.id,e.target.value)}>
                     {['menunggu','diproses','dikirim','selesai','dibatalkan'].map(s=><option key={s} value={s}>{s}</option>)}
@@ -630,15 +662,15 @@ function AdminDashboard({ user, users, products, orders, getSellerName, onSavePr
       <div className="panel">
         <div className="panel-head"><h2>Semua Pesanan</h2></div>
         {sortedOrders.length ? (
-          <div className="table-wrap"><table><thead><tr><th>Pesanan</th><th>Pembeli</th><th>Item</th><th>Total</th><th>Status</th><th>Ubah status</th></tr></thead><tbody>
+          <div className="table-wrap"><table><thead><tr><th>Pesanan</th><th>Pembeli</th><th>Item</th><th>Total & Pembayaran</th><th>Status</th><th>Ubah status</th></tr></thead><tbody>
             {sortedOrders.map(o => {
               const buyer = users.find(u=>u.id===o.buyerId);
               return (
                 <tr key={o.id}>
                   <td><strong>{o.id}</strong><br /><span className="muted">{fmtDate(o.createdAt)}</span></td>
-                  <td>{buyer?.name||o.buyerId}</td>
+                  <td>{buyer?.name||o.buyerId}{buyer?.phone ? <div><a href={waLink(buyer.phone)} target="_blank" rel="noopener noreferrer">{formatPhone(buyer.phone)}</a></div> : null}</td>
                   <td>{o.items.map(i=><div key={i.productId+String(i.qty)}>{i.nama} x{i.qty} <span className="muted">({getSellerName(i.sellerId)})</span></div>)}</td>
-                  <td>{rupiah(o.total)}</td>
+                  <td>{rupiah(o.total)}<br /><span className="muted">{o.paymentMethod || 'Belum dipilih'}</span></td>
                   <td><StatusBadge status={o.status} /></td>
                   <td><select className="control" style={{minWidth:140,padding:'6px 8px'}} value={o.status} onChange={(e)=>onUpdateOrder(o.id,e.target.value)}>
                     {['menunggu','diproses','dikirim','selesai','dibatalkan'].map(s=><option key={s} value={s}>{s}</option>)}

@@ -24,6 +24,19 @@ export function roleLabel(r) {
   return { admin: 'Admin', seller: 'Penjual', buyer: 'Pembeli' }[r] || r;
 }
 
+export function formatPhone(phone) {
+  const p = String(phone || '').trim();
+  if (!p) return '';
+  return p.startsWith('+') ? p : `+${p}`;
+}
+
+export function waLink(phone, text = '') {
+  const digits = String(phone || '').replace(/[^0-9]/g, '');
+  if (!digits) return '';
+  const base = `https://wa.me/${digits}`;
+  return text ? `${base}?text=${encodeURIComponent(text)}` : base;
+}
+
 export function compressImage(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
