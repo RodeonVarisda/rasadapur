@@ -1,33 +1,14 @@
 <!doctype html>
 <html lang="id">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#713b32">
-  <title>RasaDapur — Aplikasi UMKM</title>
-  <link rel="stylesheet" href="assets/css/app.css">
-</head>
-<body>
-  <header class="top">
-    <div class="wrap nav">
-      <div class="brand" id="brandHome" role="button" tabindex="0">
-        <div class="brand-mark">🍃</div>
-        <div>RasaDapur<small>RASA TRADISI BANYUWANGI</small></div>
-      </div>
-      <div class="nav-actions" id="navActions"></div>
-    </div>
-  </header>
-
-  <main class="wrap" id="appMain"></main>
-
-  <footer class="footer">
-    <div class="wrap">© 2026 RasaDapur · Aplikasi demo dengan 3 role (Admin, Seller, Pembeli) · Data tersimpan di localStorage browser.</div>
-  </footer>
-
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-  <script src="assets/js/storage.js"></script>
-  <script src="assets/js/auth.js"></script>
-  <script src="assets/js/app.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#713b32" />
+    <title>RasaDapur — Aplikasi UMKM</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
